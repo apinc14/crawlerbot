@@ -28,26 +28,13 @@ try:
         with connection.cursor() as cursor:
             
             create_table_query = """
-          REATE TABLE posts (
-                id INT PRIMARY KEY,
-                post_title VARCHAR(255),
-                post_content TEXT,
-                post_score INT,
-                num_comments INT,
-                creation_time DATETIME,
-                subreddit_name VARCHAR(255),
-                sentiment json,
-                entitiesArray TEXT,
-                keywordsArray TEXT,
-                upVRatio FLOAT,
-                ups INT,
-                media VARCHAR(255)
-            );
+         
 
           CREATE TABLE totals (
             id Int Auto_Increment PRIMARY KEY,
             entity VARCHAR(255),
-            score INT
+            score INT,
+            type VARCHAR(255)
         );
             """
             

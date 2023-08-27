@@ -1,13 +1,12 @@
 praw
 pymysql
 datetime 
-torch
 transformers 
 pandas
 nltk
 rake_nltk
-logging
-PIL
+
+pillow
 io 
 requests 
 urllib

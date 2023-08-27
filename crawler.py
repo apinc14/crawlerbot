@@ -1,25 +1,17 @@
 import praw
 import pymysql
-import os 
 from datetime import datetime, timedelta
-import torch
-from transformers import BertTokenizer,  RobertaForSequenceClassification, RobertaTokenizer, BertForTokenClassification, pipeline, AutoTokenizer
-from torch import cuda
-import pandas as pd
-from transformers import pipeline
-import nltk
+from transformers import BertTokenizer,TFBertForTokenClassification, BertForTokenClassification, pipeline, AutoTokenizer
 from rake_nltk import Rake
 import logging
+import torch
 logging.getLogger("transformers").setLevel(logging.WARNING)
 logging.disable(logging.CRITICAL)
-from PIL import Image
-from io import BytesIO
-import requests 
-from urllib.parse import urlparse
 import time 
 import json
 from langdetect import detect
 
+import nltk
 
 reddit = praw.Reddit(
     client_id='r7LUrKrxa1Sk8cn9CqULbw',
@@ -27,6 +19,26 @@ reddit = praw.Reddit(
     user_agent='windows:Crawler:v1.00 by /u/Nervous-profile',
     )
 
+def summarize(post_content):
+    
+    word_count = len(post_content.split())
+    if word_count>215:
+
+        max_length_162_percent = int(word_count * 0.939)
+        max_length_37_percent = int(word_count * 0.639)
+
+    if 350<word_count:
+        max_length_162_percent = int(word_count * 0.65)
+        max_length_37_percent = int(word_count * 0.30) 
+        return post_content, True
+    else:
+        return post_content, False
+    summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+    summary = summarizer(post_content, max_length=max_length_162_percent, min_length=min, do_sample=False)[0]['summary_text']
+    print("summary is",summary)
+    return summary, False
+    
+   
 
 def saveToDB(allPosts):
     host = 'localhost'
@@ -45,10 +57,10 @@ def saveToDB(allPosts):
         cursorclass=pymysql.cursors.DictCursor
     )
 
+    
+
     for x in allPosts:
         print(x)
-
-       
     print("attempted save")
     
     try:
@@ -65,12 +77,15 @@ def saveToDB(allPosts):
             print("insert 1 --- done")
             insert_totals_query = """
                 INSERT INTO totals
-                (entity, score)
+                (entity, score, type)
                 VALUES
-                (%s, %s)
+                (%s, %s, %s)
             """
-
+        
             for post in allPosts:
+                
+                
+                        
                 formatted_post = (
                     post[0],
                     post[1],
@@ -79,36 +94,47 @@ def saveToDB(allPosts):
                     post[4],
                     post[5],
                     post[6],
-                    json.dumps(post[7]),
-                    json.dumps(post[8]),  # Serialize entitiesArray as string
-                    json.dumps(post[9]),  # Serialize keywordsArray as string
+                    json.dumps(post[7]) if post[7] is not None else None,
+                    json.dumps(post[8]) if post[8] is not None else None,
+                    json.dumps(post[9]) if post[9] is not None else None,
                     post[10],
                     post[11],
                     None if post[12] == "" else post[12],  # Handle empty media
                 )
+
                 formatted_allPosts.append(formatted_post)
                 print("before for")
 
             for formatted_post in formatted_allPosts:
                 try:
-                    
-                    if post[8] != None:
-                        print("8 IS", post[8])
-                        print(type(post[7]))
+                    print("8 IS", post[8])
+                    if post[8] is not None and len(post[8]) != 0:
+
+                        print("8 IS", post[8][0])
+                        print("8 IS", post[8][1])
+                        
                         
                         all = []
+                        count = 0
                         for x in post[8]:
-                            totals_data = (x, 1)
+
+                            ent = post[8][0][count]
+                            type1 =  post[8][1]  [count]
+                            totals_data = [ent, 1, type1]
                             all.append(totals_data)
-                            print("sentiment type",type(x), "--", x)
-                              # To debug and check the type of x
+                            print(totals_data)
+                            print("change here")
+                            count += 1
+
                         cursor.executemany(insert_totals_query, all)
+                    else:
+                        print("skipped entities")
                         
 
                     print("try start")
                     print(formatted_post[0], formatted_post[1])
                     print("-")
-                    #cursor.execute(insert_query, formatted_post)  # Execute the first SQL query
+                    cursor.execute(insert_query, formatted_post)  # Execute the first SQL query
                     print("-")
                     connection.commit()
                     print("Data inserted successfully!")
@@ -117,48 +143,13 @@ def saveToDB(allPosts):
                         print("Duplicate entry. Skipping...")
                     else:
                         print("Error:", e)
+               
     except Exception as e:
         print("Error:", e)
     finally:
         cursor.close()
 
         
-
-
-   
-
-
-  
-
-
-
-
-
-# Set up PRAW with your Reddit API credentials
-
-
-
-
-def getSentiment(post_content):
-    print("-----")
-    print(type(post_content))
-    print(type(post_content))
-    print(type(post_content))
-    print(type(post_content))
-    print(type(post_content))
-    # Load the sentiment analysis pipeline
-    sentiment_analyzer = pipeline("sentiment-analysis", model="cardiffnlp/twitter-roberta-base-sentiment-latest")
-    
-    # Perform sentiment analysis on the input text
-    results = sentiment_analyzer(post_content)
-    for x in results:
-        print("sentiment--", x)
-
-    return results
-
-
-
-
 
 
 def get_entities_batch(input_sentences):
@@ -231,8 +222,33 @@ def get_entities(input_sentences):
     for entities, categories in formatted_entities_batch:
         formatted_entities.extend(entities)
         formatted_categories.extend(categories)
-    
+        
+    print("ents are ", formatted_entities)
     return formatted_entities, formatted_categories
+
+
+
+
+
+# Set up PRAW with your Reddit API credentials
+
+
+
+
+
+def getSentiment(post_content):
+    model_path = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+    pipe = pipeline("sentiment-analysis", model="cardiffnlp/twitter-roberta-base-sentiment-latest", tokenizer=model_path, max_length=512, truncation=True)
+    
+    # Perform sentiment analysis on the input text
+    results = pipe(post_content)  # Use 'text' instead of 'inputs'
+    
+    for x in results:
+        print("sentiment--", x)
+    
+    return results
+
+
 
 
 def rake(text):
@@ -280,20 +296,21 @@ def crawl_reddit_subreddit(subreddit_name):
     print(num_posts, " posts")
     print("crawling")
     count = 1
-    num_posts = 2
-    try:
-         
-        # Now you can insert data into the 'newsarticle' table
-         for submission in subreddit.new(limit=num_posts):
+    num_posts = 5
+    
+        
+    # Now you can insert data into the 'newsarticle' table
+    for submission in subreddit.new(limit=num_posts):
+        try:
             if submission.created_utc < start_of_yesterday:
-                 break
+                break
             media=None 
             if submission.is_created_from_ads_ui:       
-                return
+                continue
             if hasattr(submission, 'crosspost_parent'):
-                return
+                continue
             if submission.media is not None:
-             # Check if media is a valid URL
+            # Check if media is a valid URL
                 media_info = submission.media
                 for x in media_info:
                     print(x)
@@ -304,9 +321,9 @@ def crawl_reddit_subreddit(subreddit_name):
                 else:
                     print("No media URL found")
             language = detect(submission.title)
-            print(language)
+            print(language, "lan")
             if language != "en":
-                return    
+                continue    
             
                     
             r = Rake()   
@@ -330,16 +347,24 @@ def crawl_reddit_subreddit(subreddit_name):
             print(creation_time)
             id = id[0]+id[1]+id[2]+id[3]+id[4]+id[5]+id[6]
             
+
+            
             if post_content:
-                print(type(post_content))
-                print(type(post_content))
-                print(type(post_content))
-                print(type(post_content))
-                print(type(post_content))
+                sum = summarize(post_content)
+                if sum[1]:
+                    print("skipped")
+                    
+                    continue
+                    continue
                 print("content is ", post_content)
                 sentiment = getSentiment(post_content)
+                print("finished sentiment")
                 entitiesArray = get_entities(post_content)
                 r.extract_keywords_from_text(post_content)
+                
+                
+                print(type(post_content))
+                
             else:
                 print("title - ", post_title)
                 sentiment = getSentiment(post_title)
@@ -352,10 +377,11 @@ def crawl_reddit_subreddit(subreddit_name):
             allPosts.append(posts_data)
             count +=1
             print(count)
+        finally: 
 
-    finally: 
-        saveToDB(allPosts)
-        print("ran")
+            print("ran")
+    saveToDB(allPosts)
+   
             
 def timeLoop():
     subreddit_names = [ "Economy", "Politics", "Business","News", "Technology","Gadgets", "financialindependence", "Environment", "popculturechat", "Entertainment" ]
