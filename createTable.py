@@ -32,7 +32,7 @@ try:
 
           CREATE TABLE totals (
             id Int Auto_Increment PRIMARY KEY,
-            entity VARCHAR(255),
+            entity VARCHAR(255) UNIQUE,
             score INT,
             type VARCHAR(255)
         );
